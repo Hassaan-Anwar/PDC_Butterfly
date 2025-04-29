@@ -1,5 +1,6 @@
 // A minimal C++ adaptation of PARBUTTERFLY core algorithms
 // Focus: Preprocessing, Wedge Retrieval, Vertex Butterfly Counting
+// Updated to support Ligra-style general AdjacencyGraph format
 
 #include <iostream>
 #include <vector>
@@ -7,6 +8,9 @@
 #include <unordered_set>
 #include <algorithm>
 #include <tuple>
+#include <fstream>
+#include <sstream>
+#include <functional>
 #include <map>
 
 using namespace std;
@@ -15,11 +19,52 @@ typedef int Vertex;
 typedef pair<Vertex, Vertex> Edge;
 typedef tuple<pair<Vertex, Vertex>, int, Vertex> Wedge;
 
+// Hash function for pair<Vertex, Vertex>
+struct pair_hash {
+    template <class T1, class T2>
+    size_t operator()(const pair<T1, T2>& p) const {
+        return hash<T1>()(p.first) ^ (hash<T2>()(p.second) << 1);
+    }
+};
+
 struct Graph {
     unordered_map<Vertex, vector<Vertex>> adj;
     vector<Vertex> vertices;
     unordered_map<Vertex, int> rank;
 };
+
+// Parse Ligra-style general adjacency graph format (AdjacencyGraph)
+Graph loadLigraAdjacencyGraph(const string& filename) {
+    ifstream file(filename);
+    if (!file.is_open()) {
+        cerr << "Error opening file!" << endl;
+        exit(1);
+    }
+
+    string header;
+    getline(file, header); // Skip "AdjacencyGraph"
+
+    int n, m;
+    file >> n >> m;
+
+    vector<int> offsets(n);
+    vector<int> edges(m);
+
+    for (int i = 0; i < n; ++i) file >> offsets[i];
+    for (int i = 0; i < m; ++i) file >> edges[i];
+
+    Graph G;
+    for (int i = 0; i < n; ++i) {
+        int start = offsets[i];
+        int end = (i + 1 < n) ? offsets[i + 1] : m;
+        for (int j = start; j < end; ++j) {
+            G.adj[i].push_back(edges[j]);
+        }
+        G.vertices.push_back(i);
+    }
+
+    return G;
+}
 
 // Ranking: sort all vertices based on a custom function (e.g., degree descending)
 Graph preprocess(const Graph& G, function<bool(Vertex, Vertex)> rank_func) {
@@ -55,7 +100,7 @@ vector<Wedge> getWedges(const Graph& G) {
 }
 
 unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
-    unordered_map<pair<Vertex, Vertex>, int, hash<pair<int,int>>> wedge_count;
+    unordered_map<pair<Vertex, Vertex>, int, pair_hash> wedge_count;
     unordered_map<Vertex, int> butterfly_count;
 
     for (const auto& [endpoints, freq, center] : wedges) {
@@ -81,14 +126,7 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
 }
 
 int main() {
-    Graph G;
-    // Example graph
-    G.adj[0] = {3, 4};
-    G.adj[1] = {3, 4};
-    G.adj[2] = {3};
-    G.adj[3] = {0, 1, 2};
-    G.adj[4] = {0, 1};
-    G.vertices = {0, 1, 2, 3, 4};
+    Graph G = loadLigraAdjacencyGraph("inputs/rMatGraph_WJ_5_100");
 
     // Degree-based ranking
     auto G_prime = preprocess(G, [&](Vertex a, Vertex b) {
