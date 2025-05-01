@@ -140,7 +140,7 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
 }
 
 int main() {
-
+    
     auto total_start = high_resolution_clock::now();  // Declare total_start here
 
     auto load_start = high_resolution_clock::now();
