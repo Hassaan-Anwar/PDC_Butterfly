@@ -126,7 +126,7 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
 }
 
 int main() {
-    Graph G = loadLigraAdjacencyGraph("inputs/rMatGraph_WJ_5_100");
+    Graph G = loadLigraAdjacencyGraph("inputs/my_input.txt");
 
     // Degree-based ranking
     auto G_prime = preprocess(G, [&](Vertex a, Vertex b) {
