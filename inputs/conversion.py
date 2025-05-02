@@ -1,50 +1,46 @@
-def convert_edge_list_to_adjacency_graph(input_file, output_file):
-    with open(input_file, 'r') as f:
-        lines = [line.strip() for line in f if not line.startswith('%') and line.strip()]
-    
-    edges = []
-    u_set, v_set = set(), set()
+import random
 
-    for line in lines:
-        u_str, v_str = line.strip().split()
-        u = int(u_str)
-        v = int(v_str)
-        edges.append((u, v))
-        u_set.add(u)
-        v_set.add(v)
+def create_smaller_graph_file_by_edges(input_filename, output_filename, target_edge_count):
+  """
+  Reads a graph file, randomly selects a subset of edges, and writes it to a new file.
 
-    # Normalize vertex IDs to start at 0
-    u_list = sorted(list(u_set))
-    v_list = sorted(list(v_set))
-    u_map = {u: idx for idx, u in enumerate(u_list)}
-    v_map = {v: idx for idx, v in enumerate(v_list)}
-    num_u = len(u_list)
-    num_v = len(v_list)
+  Args:
+      input_filename (str): The name of the input graph file.
+      output_filename (str): The name of the output graph file.
+      target_edge_count (int): The desired number of edges in the smaller graph.
+  """
 
-    # Build adjacency list for U side
-    adj = [[] for _ in range(num_u)]
-    for u, v in edges:
-        adj[u_map[u]].append(v_map[v])
+  edges = []
+  with open(input_filename, 'r') as infile:
+    infile.readline() # Skip the header
+    for line in infile:
+      line = line.strip()
+      if not line:
+        continue
+      try:
+        node1, node2 = map(int, line.split())
+        edges.append((node1, node2))
+      except ValueError:
+        print(f"Skipping invalid line: {line}")
 
-    # Build offset and edge list
-    offsets = []
-    edge_list = []
-    count = 0
-    for nbrs in adj:
-        offsets.append(count)
-        edge_list.extend(sorted(nbrs))
-        count += len(nbrs)
+  # Randomly sample edges
+  selected_edges = random.sample(edges, min(target_edge_count, len(edges))) # Ensure we don't sample more than we have
 
-    with open(output_file, 'w') as out:
-        out.write("AdjacencyGraph\n")
-        out.write(f"{num_u}\n")
-        out.write(f"{len(edge_list)}\n")
-        for offset in offsets:
-            out.write(f"{offset}\n")
-        for v in edge_list:
-            out.write(f"{v}\n")
+  with open(output_filename, 'w') as outfile:
+    outfile.write("WeightedAdjacencyGraph\n")
+    for node1, node2 in selected_edges:
+      outfile.write(f"{node1} {node2}\n")
 
-    print(f"✅ Converted to Ligra AdjacencyGraph format and saved to {output_file}")
+ #--- Main Execution ---
+input_file = "rMatGraph_J_5_500.txt"
+output_file = "smaller_graph_random.txt"
 
-# Example usage:
-convert_edge_list_to_adjacency_graph("input", "my_input.txt")
+ # Calculate total edge count
+with open(input_file, 'r') as infile:
+    total_edge_count = len(infile.readlines()) - 1  # Subtract 1 for the header
+
+target_edge_count = total_edge_count // 2  # Integer division to get approximately 1/4
+
+create_smaller_graph_file_by_edges(input_file, output_file, target_edge_count)
+
+print(f"Smaller graph file '{output_file}' created with approximately {target_edge_count} edges.")

@@ -106,9 +106,9 @@ vector<Wedge> getWedges(const Graph& G) {
     return wedges;
 }
 
-unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
+int countTotalButterflies(const vector<Wedge>& wedges) {
     unordered_map<pair<Vertex, Vertex>, int, pair_hash> wedge_count;
-    unordered_map<Vertex, int> butterfly_count;
+    int total_butterflies = 0;
 
     for (const auto& wedge : wedges) {
         const pair<Vertex, Vertex>& endpoints = get<0>(wedge);
@@ -116,28 +116,22 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges) {
     }
 
     for (const auto& wc_pair : wedge_count) {
-        const pair<Vertex, Vertex>& endpoints = wc_pair.first;
         int d = wc_pair.second;
-        Vertex u1 = endpoints.first;
-        Vertex u2 = endpoints.second;
-        butterfly_count[u1] += d * (d - 1) / 2;
-        butterfly_count[u2] += d * (d - 1) / 2;
+        total_butterflies += d * (d - 1);
     }
 
     unordered_map<Vertex, int> center_count;
     for (const auto& wedge : wedges) {
         const pair<Vertex, Vertex>& endpoints = get<0>(wedge);
-        Vertex center = get<2>(wedge);
-        center_count[center] += wedge_count[endpoints] - 1;
+        center_count[get<2>(wedge)] += wedge_count[endpoints] - 1;
     }
     for (const auto& cc_pair : center_count) {
-        Vertex v = cc_pair.first;
-        int c = cc_pair.second;
-        butterfly_count[v] += c;
+        total_butterflies += cc_pair.second;
     }
 
-    return butterfly_count;
+    return total_butterflies;
 }
+
 
 int main() {
     
@@ -147,6 +141,8 @@ int main() {
     Graph G = loadLigraAdjacencyGraph("inputs/rMatGraph_J_5_500.txt");
     auto load_stop = high_resolution_clock::now();
     auto load_duration = duration_cast<milliseconds>(load_stop - load_start);
+    cout << "Graph loading:      " << load_duration.count() << " ms\n";
+
 
     auto preprocess_start = high_resolution_clock::now();
     auto G_prime = preprocess(G, [&](Vertex a, Vertex b) {
@@ -154,27 +150,36 @@ int main() {
     });
     auto preprocess_stop = high_resolution_clock::now();
     auto preprocess_duration = duration_cast<milliseconds>(preprocess_stop - preprocess_start);
+    cout << "Preprocessing:      " << preprocess_duration.count() << " ms\n";
+
 
     auto wedges_start = high_resolution_clock::now();
     auto wedges = getWedges(G_prime);
     auto wedges_stop = high_resolution_clock::now();
     auto wedges_duration = duration_cast<milliseconds>(wedges_stop - wedges_start);
+    cout << "Wedge computation:  " << wedges_duration.count() << " ms\n";
+
 
     auto count_start = high_resolution_clock::now();
-    auto butterfly_counts = countVertexButterflies(wedges);
+    int total_butterflies = countTotalButterflies(wedges);
     auto count_stop = high_resolution_clock::now();
     auto count_duration = duration_cast<milliseconds>(count_stop - count_start);
+    cout << "Butterfly counting: " << count_duration.count() << " ms\n";
+
+
+    // Print total butterfly count instead of per vertex counts ...
+    cout << "Total butterfly count: " << total_butterflies << endl;
 
     auto total_stop = high_resolution_clock::now();
     auto total_duration = duration_cast<milliseconds>(total_stop - total_start);
 
-    cout << "\nVertex butterfly counts:\n";
+ /*   cout << "\nVertex butterfly counts:\n";
     for (const auto& bc_pair : butterfly_counts) {
         Vertex v = bc_pair.first;
         int count = bc_pair.second;
         cout << "Vertex " << v << ": " << count << endl;
     }
-
+*/
     cout << "\nTiming Information:\n";
     cout << "--------------------------------\n";
     cout << "Graph loading:      " << load_duration.count() << " ms\n";
