@@ -10,7 +10,7 @@
 #include <map>
 #include <chrono>  // For timing
 #include <mpi.h>   // Include MPI header
-
+#include <metis.h>
 using namespace std;
 using namespace std::chrono;  // For timing
 typedef int Vertex;
@@ -146,36 +146,41 @@ Graph preprocess(const Graph& G, function<bool(Vertex, Vertex)> rank_func) {
         sort(sorted_nbrs.begin(), sorted_nbrs.end(), [&](Vertex a, Vertex b) {
             return G_prime.rank[a] > G_prime.rank[b];
         });
-        G_prime.adj[G_prime.rank[u]] = sorted_nbrs;
+        G_prime.adj[u] = sorted_nbrs;
     }
     return G_prime;
 }
 
-vector<Wedge> getWedges(const Graph& G, int rank, int world_size) {
-    vector<Wedge> wedges;
-    
-    // Divide vertices among processes
-    int vertices_per_process = G.vertices.size() / world_size;
-    int start_idx = rank * vertices_per_process;
-    int end_idx = (rank == world_size - 1) ? G.vertices.size() : (rank + 1) * vertices_per_process;
-    
-    // Process only assigned vertices
-    for (int i = start_idx; i < end_idx; i++) {
-        Vertex u1 = G.vertices[i];
-        if (G.adj.find(u1) == G.adj.end()) continue;
-        
-        const vector<Vertex>& neighbors = G.adj.at(u1);
-        for (Vertex v : neighbors) {
-            if (G.adj.find(v) == G.adj.end()) continue;
-            const vector<Vertex>& v_neighbors = G.adj.at(v);
-            for (Vertex u2 : v_neighbors) {
-                if (u1 != u2) {
-                    wedges.emplace_back(make_pair(u1, u2), 1, v);
-                }
-            }
-        }
-    }
-    
+vector<Wedge> getWedges(const Graph& G, int rank, int world_size, 
+    const unordered_map<Vertex, int>& vertex_partition) {
+vector<Wedge> wedges;
+
+// Collect vertices assigned to this partition via METIS
+vector<Vertex> my_vertices;
+for (Vertex u : G.vertices) {
+if (vertex_partition.at(u) == rank) {
+my_vertices.push_back(u);
+}
+}
+
+// Process assigned vertices using FULL adjacency lists
+for (Vertex u1 : my_vertices) {
+if (!G.adj.count(u1)) continue;
+
+// Access full neighbors of u1
+const vector<Vertex>& u1_neighbors = G.adj.at(u1);
+for (Vertex v : u1_neighbors) {
+if (!G.adj.count(v)) continue;
+
+// Access full neighbors of v (even if v is in another partition)
+const vector<Vertex>& v_neighbors = G.adj.at(v);
+for (Vertex u2 : v_neighbors) {
+if (u1 != u2) {
+wedges.emplace_back(make_pair(u1, u2), 1, v);
+}
+}
+}
+}
     // Gather wedge counts
     int local_wedge_count = wedges.size();
     vector<int> all_wedge_counts(world_size);
@@ -230,18 +235,29 @@ vector<Wedge> getWedges(const Graph& G, int rank, int world_size) {
     return all_wedges;
 }
 
-unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges, int rank, int world_size) {
+unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges, int rank, int world_size, 
+                                          const unordered_map<Vertex, int>& vertex_partition) {
     unordered_map<pair<Vertex, Vertex>, int, pair_hash> wedge_count;
     unordered_map<Vertex, int> butterfly_count;
     
-    // Process wedges in parallel
-    int wedges_per_process = wedges.size() / world_size;
-    int start_idx = rank * wedges_per_process;
-    int end_idx = (rank == world_size - 1) ? wedges.size() : (rank + 1) * wedges_per_process;
+    // Filter wedges according to the current partition
+    vector<Wedge> my_wedges;
+    for (const auto& wedge : wedges) {
+        const pair<Vertex, Vertex>& endpoints = get<0>(wedge);
+        Vertex u1 = endpoints.first;
+        Vertex u2 = endpoints.second;
+        Vertex center = get<2>(wedge);
+        
+        // Process wedge if any of its vertices (u1, u2, or center) belong to this partition
+        if (vertex_partition.at(u1) == rank || 
+            vertex_partition.at(u2) == rank || 
+            vertex_partition.at(center) == rank) {
+            my_wedges.push_back(wedge);
+        }
+    }
     
-    // Local wedge counting
-    for (int i = start_idx; i < end_idx; i++) {
-        const auto& wedge = wedges[i];
+    // Local wedge counting using partition-filtered wedges
+    for (const auto& wedge : my_wedges) {
         const pair<Vertex, Vertex>& endpoints = get<0>(wedge);
         wedge_count[endpoints]++;
     }
@@ -282,7 +298,7 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges, i
     
     // Merge wedge counts
     unordered_map<pair<Vertex, Vertex>, int, pair_hash> global_wedge_count;
-    for (int i = 0; i < all_serialized_counts.size(); i += 3) {
+    for (size_t i = 0; i < all_serialized_counts.size(); i += 3) {
         Vertex u1 = all_serialized_counts[i];
         Vertex u2 = all_serialized_counts[i+1];
         int count = all_serialized_counts[i+2];
@@ -299,13 +315,16 @@ unordered_map<Vertex, int> countVertexButterflies(const vector<Wedge>& wedges, i
         butterfly_count[u2] += d * (d - 1) / 2;
     }
     
-    // Calculate center counts
+    // Calculate center counts for vertices in my partition
     unordered_map<Vertex, int> center_count;
-    for (int i = start_idx; i < end_idx; i++) {
-        const auto& wedge = wedges[i];
+    for (const auto& wedge : my_wedges) {
         const pair<Vertex, Vertex>& endpoints = get<0>(wedge);
         Vertex center = get<2>(wedge);
-        center_count[center] += global_wedge_count[endpoints] - 1;
+        
+        // Only count for centers in my partition
+        if (vertex_partition.at(center) == rank) {
+            center_count[center] += global_wedge_count[endpoints] - 1;
+        }
     }
     
     // Merge center counts
@@ -378,14 +397,73 @@ int main(int argc, char* argv[]) {
     });
     auto preprocess_stop = high_resolution_clock::now();
     auto preprocess_duration = duration_cast<milliseconds>(preprocess_stop - preprocess_start);
-    
+
+// METIS Partitioning
+vector<int> part;
+unordered_map<Vertex, int> vertex_partition;
+
+if (world_rank == 0) {
+    vector<Vertex> nodes = G_prime.vertices;
+    int n = nodes.size();
+    unordered_map<Vertex, idx_t> vertex_to_index;
+    for (idx_t i = 0; i < n; ++i) {
+        vertex_to_index[nodes[i]] = i;
+    }
+
+    // Build adjacency arrays for METIS
+    vector<idx_t> xadj(n + 1, 0);
+    vector<idx_t> adjncy;
+    for (idx_t i = 0; i < n; ++i) {
+        Vertex u = nodes[i];
+        const auto& neighbors = G_prime.adj.at(u);
+        for (Vertex v : neighbors) {
+            adjncy.push_back(vertex_to_index[v]);
+        }
+        xadj[i + 1] = adjncy.size();
+    }
+
+    // METIS variables
+    idx_t nvtxs = n;
+    idx_t ncon = 1;
+    idx_t nparts = world_size;
+    idx_t objval;
+    vector<idx_t> part_metis(n);
+    idx_t options[METIS_NOPTIONS];
+    METIS_SetDefaultOptions(options);
+    options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
+
+    // Partition the graph
+    int ret = METIS_PartGraphKway(&nvtxs, &ncon, xadj.data(), adjncy.data(),
+                                  NULL, NULL, NULL, &nparts, NULL, NULL, options, &objval, part_metis.data());
+    if (ret != METIS_OK) {
+        cerr << "METIS partitioning failed." << endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    part.assign(part_metis.begin(), part_metis.end());
+}
+
+// Broadcast partition vector
+int n_part = (world_rank == 0) ? G_prime.vertices.size() : 0;
+MPI_Bcast(&n_part, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+if (world_rank != 0) {
+    part.resize(n_part);
+}
+MPI_Bcast(part.data(), n_part, MPI_INT, 0, MPI_COMM_WORLD);
+
+// Build vertex_partition map
+vector<Vertex> nodes = G_prime.vertices;
+for (int i = 0; i < nodes.size(); ++i) {
+    vertex_partition[nodes[i]] = part[i];
+}
     auto wedges_start = high_resolution_clock::now();
-    auto wedges = getWedges(G_prime, world_rank, world_size);
+    auto wedges = getWedges(G_prime, world_rank, world_size, vertex_partition);
     auto wedges_stop = high_resolution_clock::now();
     auto wedges_duration = duration_cast<milliseconds>(wedges_stop - wedges_start);
     
     auto count_start = high_resolution_clock::now();
-    auto butterfly_counts = countVertexButterflies(wedges, world_rank, world_size);
+    auto butterfly_counts = countVertexButterflies(wedges, world_rank, world_size, vertex_partition);
     auto count_stop = high_resolution_clock::now();
     auto count_duration = duration_cast<milliseconds>(count_stop - count_start);
     
