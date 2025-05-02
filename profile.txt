@@ -1,0 +1,10 @@
+Graph loaded in 330 milliseconds
+
+Timing Information:
+--------------------------------
+Graph loading:      336 ms
+Preprocessing:      583 ms
+Wedge computation:  1964 ms
+Butterfly counting: 753351 ms
+--------------------------------
+Total time:         756235 ms
