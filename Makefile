@@ -41,7 +41,6 @@ run-mpi:
 run-hybrid:
 	mpiexec -n 4 ./hybrid
 
-# Clean up
 clean:
 	rm -f butterfly quick mpi_butterfly hybrid
 
