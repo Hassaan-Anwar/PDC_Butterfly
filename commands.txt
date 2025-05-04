@@ -1,0 +1,17 @@
+Normal Sequential: 
+g++ -Wall -O2 -o butterfly attempt1.cpp
+./butterfly
+
+OpenMP only:
+ g++ -std=c++11 -fopenmp -O3 openmp.cpp -o quick
+ ./quick
+
+
+ OpenMPI only:
+mpic++ -std=c++14 -Wall -O3 -fopenmp -o mpi_butterfly openmpi.cpp -lmetis  
+mpiexec -n 4 ./mpi_butterfly
+
+
+OpenMPI And OpenMP:
+ mpic++ -fopenmp -Wall -O3 -std=c++17 -o new openmpi_openmp.cpp -lmetis
+ mpiexec -n 4 ./new

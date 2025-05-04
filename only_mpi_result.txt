@@ -1,0 +1,11 @@
+Timing Information:
+--------------------------------
+Graph loading:      275 ms
+Preprocessing:      228 ms
+Wedge computation:  746 ms
+Butterfly counting: 91951 ms
+--------------------------------
+Total time:         93699 ms
+Number of processes: 4
+Total wedges: 9725012
+Total butterflies (sum of counts): 47726969
